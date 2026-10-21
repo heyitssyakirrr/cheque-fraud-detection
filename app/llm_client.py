@@ -1,4 +1,5 @@
 import base64
+import json
 import time
 
 import httpx
@@ -35,6 +36,25 @@ def _build_file_part(image_bytes: bytes, mime_type: str) -> dict:
     if mime_type == "application/pdf":
         return {"type": "file", "file": {"filename": "cheque.pdf", "file_data": data_url}}
     return {"type": "image_url", "image_url": {"url": data_url}}
+
+
+def _flagged(results) -> list[str]:
+    """Category names Azure marked in a content_filter_results object, e.g.
+    {"jailbreak": {"filtered": true, "detected": true}, "hate": {"filtered": false, "severity": "safe"}}.
+    Filtered categories first, then detected-only ones."""
+    if not isinstance(results, dict):
+        return []
+    filtered, detected = [], []
+    for name, value in results.items():
+        if not isinstance(value, dict):
+            continue
+        severity = value.get("severity")
+        label = f"{name} ({severity})" if severity and severity != "safe" else name
+        if value.get("filtered"):
+            filtered.append(label)
+        elif value.get("detected"):
+            detected.append(f"{label}, detected only")
+    return filtered + detected
 
 
 def _message_text(content) -> str | None:
@@ -106,6 +126,23 @@ async def extract_cheque_data(image_bytes: bytes, mime_type: str, request_id: st
         f"[{request_id}] FOUNDRY  HTTP {response.status_code} in {elapsed:.1f}s finish_reason={finish_reason} "
         f"tokens(prompt={usage.get('prompt_tokens', '?')}, completion={usage.get('completion_tokens', '?')})"
     )
+
+    if finish_reason == "content_filter":
+        # The gateway answers 200 with a stock refusal text; it is not the model's answer.
+        prompt_flags = [flag for item in body.get("prompt_filter_results") or []
+                        if isinstance(item, dict) for flag in _flagged(item.get("content_filter_results"))]
+        answer_flags = _flagged(choice.get("content_filter_results"))
+        # prompt_tokens=0 means the model never read the request: the input was blocked.
+        where = "answer" if answer_flags and not prompt_flags else "request (before the model read it)" \
+            if prompt_flags or usage.get("prompt_tokens") == 0 else "request"
+        categories = ", ".join(prompt_flags or answer_flags) or "category not reported"
+        audit_log.error(
+            f"[{request_id}] FILTER   blocked by the Azure content filter on the {where}; categories={categories} | "
+            f"prompt_filter_results={json.dumps(body.get('prompt_filter_results'))} | "
+            f"answer_filter_results={json.dumps(choice.get('content_filter_results'))}"
+        )
+        audit_log.error(f"[{request_id}] FILTER   full response body: {shorten(response.text)}")
+        raise LLMError(f"Blocked by the AI Foundry content filter on the {where}: {categories}.")
 
     text = _message_text((choice.get("message") or {}).get("content"))
     if text is None:
