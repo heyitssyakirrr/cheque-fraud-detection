@@ -71,17 +71,15 @@ async def extract_cheque_data(image_bytes: bytes, mime_type: str, request_id: st
 
     audit_log.info(
         f"[{request_id}] FOUNDRY  calling POST {url} model={settings.llm_model} "
-        f"max_tokens={settings.llm_max_tokens} helper_id={settings.helper_id or '<not set>'} "
-        f"api_key={'set' if settings.llm_api_key else '<NOT SET>'}"
+        f"max_tokens={settings.llm_max_tokens} helper_id={settings.helper_id or '<not set>'}"
     )
     started = time.perf_counter()
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with httpx.AsyncClient(timeout=120.0, verify = False) as client:
             response = await client.post(
                 url,
                 headers={
                     "Content-Type": "application/json",
-                    "Authorization": f"Bearer {settings.llm_api_key}",
                     "X-PBAI-Helper-Id": settings.helper_id,
                 },
                 json=payload,

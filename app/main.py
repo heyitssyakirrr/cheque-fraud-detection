@@ -20,7 +20,7 @@ async def lifespan(_app: FastAPI):
     s = get_settings()
     audit_log.info(
         f"STARTUP  endpoint={s.llm_base_url or '<LLM_BASE_URL NOT SET>'}{s.llm_extract_path} model={s.llm_model} "
-        f"api_key={'set' if s.llm_api_key else '<NOT SET>'} helper_id={'set' if s.helper_id else '<NOT SET>'}"
+        f"helper_id={'set' if s.helper_id else '<NOT SET>'}"
     )
     audit_log.info(f"STARTUP  audit log: {LOG_PATH} | results CSV: {CSV_PATH}")
     yield
