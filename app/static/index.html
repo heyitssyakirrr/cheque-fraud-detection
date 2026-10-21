@@ -93,13 +93,18 @@
   }
 
   .error { color: var(--bad); font-size: 0.88rem; margin-top: 12px; }
+  .warn {
+    background: rgba(217,164,65,0.12); border: 1px solid var(--warn); color: var(--warn);
+    border-radius: 8px; padding: 10px 12px; font-size: 0.88rem; margin-bottom: 12px; line-height: 1.45;
+  }
+  .reqid { margin-top: 14px; font-size: 0.78rem; color: var(--muted); }
   .hidden { display: none; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>Cheque Fraud Detection</h1>
-  <p class="sub">Upload a cheque image or PDF to extract the date and check for a visible signature.</p>
+  <p class="sub">Upload a cheque image or PDF to extract its details, check the amounts match, and check for a visible signature.</p>
 
   <div class="panel">
     <div id="drop">
@@ -114,6 +119,7 @@
   </div>
 
   <div class="panel hidden" id="resultPanel">
+    <div class="warn hidden" id="rWarn"></div>
     <div class="field"><span class="label">Date</span><span id="rDate">-</span></div>
     <div class="field"><span class="label">Date confidence</span><span id="rDateConf"></span></div>
     <div class="field"><span class="label">Payee</span><span id="rPayee">-</span></div>
@@ -127,6 +133,7 @@
       <summary>Raw model response</summary>
       <pre id="rRaw"></pre>
     </details>
+    <div class="reqid" id="rReqId"></div>
   </div>
 </div>
 
@@ -206,6 +213,14 @@
 
   function renderResult(data) {
     const ex = data.extraction;
+    const warnEl = document.getElementById('rWarn');
+    if (data.parse_error) {
+      warnEl.textContent = `⚠ The model's reply could not be read, so the fields below are blank - this is NOT a "nothing detected" result. ${data.parse_error}. Check "Raw model response" below.`;
+      warnEl.classList.remove('hidden');
+    } else {
+      warnEl.classList.add('hidden');
+    }
+    document.getElementById('rReqId').textContent = `Request ID: ${data.request_id} (search logs/audit.log for this)`;
     document.getElementById('rDate').textContent = ex.date || '(not detected)';
     document.getElementById('rDateConf').innerHTML = confBadge(ex.date_confidence);
 

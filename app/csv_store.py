@@ -17,6 +17,7 @@ CSV_PATH = Path(__file__).parent.parent / "cheque_results.csv"
 
 FIELDNAMES = [
     "timestamp",
+    "request_id",
     "filename",
     "mime_type",
     "date",
@@ -28,6 +29,7 @@ FIELDNAMES = [
     "signature_present",
     "signature_confidence",
     "notes",
+    "parse_error",
     "raw_gateway_response",
 ]
 
@@ -35,6 +37,7 @@ FIELDNAMES = [
 @dataclass
 class ChequeResultRow:
     timestamp: str
+    request_id: str
     filename: str
     mime_type: str
     date: str | None = None
@@ -46,13 +49,22 @@ class ChequeResultRow:
     signature_present: bool | None = None
     signature_confidence: str | None = None
     notes: str | None = None
+    parse_error: str | None = None
     raw_gateway_response: str = ""
 
 
-def build_row(filename: str, mime_type: str, extraction: ChequeExtractionResult, raw_response: str) -> ChequeResultRow:
+def build_row(
+    request_id: str,
+    filename: str,
+    mime_type: str,
+    extraction: ChequeExtractionResult,
+    raw_response: str,
+    parse_error: str | None,
+) -> ChequeResultRow:
     """Build a ChequeResultRow from the parsed extraction result."""
     return ChequeResultRow(
         timestamp=datetime.now(timezone.utc).isoformat(),
+        request_id=request_id,
         filename=filename,
         mime_type=mime_type,
         date=extraction.date,
@@ -64,14 +76,23 @@ def build_row(filename: str, mime_type: str, extraction: ChequeExtractionResult,
         signature_present=extraction.signature_present,
         signature_confidence=extraction.signature_confidence,
         notes=extraction.notes,
+        parse_error=parse_error,
         raw_gateway_response=raw_response,
     )
 
 
 def append_result(row: ChequeResultRow) -> None:
     """Append one row to cheque_results.csv, writing the header first if
-    the file doesn't exist yet."""
+    the file doesn't exist yet. A file with an older set of columns is
+    renamed aside rather than appended to, so columns never misalign."""
     file_exists = CSV_PATH.exists()
+    if file_exists:
+        with CSV_PATH.open(newline="", encoding="utf-8") as f:
+            header = next(csv.reader(f), [])
+        if header != FIELDNAMES:
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            CSV_PATH.rename(CSV_PATH.with_name(f"cheque_results.old-{stamp}.csv"))
+            file_exists = False
     with CSV_PATH.open("a", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES)
         if not file_exists:

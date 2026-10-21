@@ -14,5 +14,7 @@ class ChequeExtractionResult(BaseModel):
 
 
 class ChequeUploadResponse(BaseModel):
+    request_id: str  # matches the [id] in logs/audit.log and the CSV row
     extraction: ChequeExtractionResult
+    parse_error: str | None = None  # set when the model's reply couldn't be read
     raw_gateway_response: str  # keep the raw text around for debugging early on
