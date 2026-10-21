@@ -36,6 +36,32 @@ def user_with_image(text: str, image: bytes, mime: str) -> dict:
     return {"role": "user", "content": [{"type": "text", "text": text}, _build_file_part(image, mime)]}
 
 
+# The field lines of EXTRACTION_PROMPT, so round 2 can ask for subsets of them.
+FIELDS = {
+    "date": '"date": "<the date written on the cheque, in YYYY-MM-DD if possible, else as written>"',
+    "date_confidence": '"date_confidence": "<high, medium, or low>"',
+    "payee_name": "\"payee_name\": \"<the name written after 'Pay to' or similar, exactly as written>\"",
+    "amount_numeric": '"amount_numeric": "<the amount written in numeric/digit form, including currency symbol if present, exactly as written>"',
+    "amount_words": '"amount_words": "<the amount written in words, exactly as written>"',
+    "amount_match": '"amount_match": <true or false - do the numeric and word amounts represent the same value>',
+    "signature_present": '"signature_present": <true or false - is a signature-like mark visible in the signature area>',
+    "signature_confidence": '"signature_confidence": "<high, medium, or low>"',
+    "notes": '"notes": "<one short sentence on anything relevant - e.g. faded, skewed, unclear, amount mismatch>"',
+}
+HEADER = ("You are analyzing a bank cheque - it may be provided as an image or a PDF page. Look carefully and respond "
+          "with ONLY a JSON object, no markdown, no code fences, no extra text - just the raw JSON, matching exactly this shape:")
+FOOTER = ("If any field is not clearly visible or legible, set it to null rather than guessing. This is a visual "
+          "presence/extraction check only - you are NOT verifying the signature against any reference, just noting "
+          "whether one is visibly present.")
+SOFT_HEADER = "Read the attached document image and fill in this JSON object. Reply with the JSON only:"
+SOFT_FOOTER = "Use null for anything you cannot read clearly."
+
+
+def make_prompt(keys: list[str], header: str = HEADER, footer: str = FOOTER) -> str:
+    body = ",\n".join(f"  {FIELDS[k]}" for k in keys)
+    return f"{header}\n\n{{\n{body}\n}}\n\n{footer}"
+
+
 def run(name: str, messages: list[dict]) -> None:
     s = get_settings()
     body = {"model": s.llm_model, "messages": messages, "max_tokens": s.llm_max_tokens, "stream": False}
@@ -71,12 +97,8 @@ def run(name: str, messages: list[dict]) -> None:
     print(f"    reply: {str(content)[:300]!r}")
 
 
-def main() -> None:
-    if len(sys.argv) != 2:
-        sys.exit("usage: python -m tools.diagnose_filter path/to/cheque.png")
-    cheque = Path(sys.argv[1]).read_bytes()
+def round_basic(cheque: bytes) -> None:
     blank = blank_png()
-
     run("1. plain text, no image, no system prompt",
         [{"role": "user", "content": 'Reply with exactly this JSON: {"ok": true}'}])
     run("2. our system prompt, text only (no image)",
@@ -95,6 +117,50 @@ def main() -> None:
     print("  3 blocked            -> any image is blocked (images may not be allowed on this deployment)")
     print("  4 blocked, 3 passed  -> the cheque image's content is the trigger (e.g. PII: names, account numbers)")
     print("  only 5 blocked       -> the combination of prompt + cheque is the trigger")
+
+
+def round_fields(cheque: bytes, repeat: int = 2) -> None:
+    """Round 2: the cheque with variations of the prompt, to find which part of the request
+    trips the filter. Each runs `repeat` times because the filter is not fully consistent."""
+    all_keys = list(FIELDS)
+    no_payee = [k for k in all_keys if k != "payee_name"]
+    variants = [
+        ("A. full prompt as system message (same as test 5)", make_prompt(all_keys), True),
+        ("B. full prompt sent as the user message instead", make_prompt(all_keys), False),
+        ("C. all fields EXCEPT payee_name", make_prompt(no_payee), True),
+        ("D. only date", make_prompt(["date", "date_confidence"]), True),
+        ("E. only amounts", make_prompt(["amount_numeric", "amount_words", "amount_match"]), True),
+        ("F. only signature", make_prompt(["signature_present", "signature_confidence"]), True),
+        ("G. only payee_name", make_prompt(["payee_name"]), True),
+        ("H. all fields, softer wording (no 'bank cheque', no signature sentence)",
+         make_prompt(all_keys, SOFT_HEADER, SOFT_FOOTER), True),
+    ]
+    for name, prompt, as_system in variants:
+        for i in range(1, repeat + 1):
+            if as_system:
+                messages = [{"role": "system", "content": prompt},
+                            user_with_image("Extract the fields from this cheque.", cheque, "image/png")]
+            else:
+                messages = [user_with_image(prompt, cheque, "image/png")]
+            run(f"{name}  [try {i}/{repeat}]", messages)
+
+    print("\nHow to read this: compare which letters are BLOCKED vs passed.")
+    print("  only A, B, G (and anything with payee_name) blocked -> asking for the payee's name is the trigger")
+    print("  F blocked                                         -> asking about the signature is the trigger")
+    print("  A blocked but B passed                            -> sending the prompt as a system message is the trigger")
+    print("  H passed but A blocked                            -> the wording ('bank cheque', 'signature' sentence) is the trigger")
+    print("  everything blocked                                -> any field extraction from this image is blocked")
+
+
+def main() -> None:
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if len(args) != 1:
+        sys.exit("usage: python -m tools.diagnose_filter path/to/cheque.png [--basic]")
+    cheque = Path(args[0]).read_bytes()
+    if "--basic" in sys.argv:
+        round_basic(cheque)
+    else:
+        round_fields(cheque)
 
 
 if __name__ == "__main__":
