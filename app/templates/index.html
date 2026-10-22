@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cheque Intelligence | Public Bank Berhad</title>
+  <link rel="stylesheet" href="/static/site.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="Cheque Intelligence home">
+      <span class="brand-mark">P</span>
+      <span><strong>PUBLIC BANK</strong><small>BERHAD · CHEQUE INTELLIGENCE</small></span>
+    </a>
+    <span class="secure-label">Secure processing workspace</span>
+  </header>
+
+  <main class="upload-page">
+    <section class="hero">
+      <p class="eyebrow">DOCUMENT ANALYSIS</p>
+      <h1>Process cheques with<br><em>clarity and confidence.</em></h1>
+      <p>Upload one or many cheque images. Each receives a full signature, OCR, and handwritten-date analysis with review evidence. You'll be taken to a results page where each image appears as soon as it's ready.</p>
+    </section>
+
+    <section class="workspace-card">
+      <form action="/process" method="post" enctype="multipart/form-data" id="upload-form">
+        <div class="section-heading">
+          <div><p class="eyebrow">NEW ANALYSIS</p><h2>Upload cheque images</h2></div>
+          <span class="file-count" id="file-count">No files selected</span>
+        </div>
+
+        <label class="dropzone" id="dropzone" for="cheques">
+          <input id="cheques" name="cheques" type="file" accept="image/png,image/jpeg,image/tiff" multiple required>
+          <span class="upload-icon">↑</span>
+          <strong>Drop cheque images here</strong>
+          <span>or browse files · PNG, JPG, TIFF · up to 15 MB each</span>
+        </label>
+        <div class="selected-files" id="selected-files"></div>
+
+        <details class="settings-panel">
+          <summary><span>Processing settings</span><small>Recommended defaults are selected</small></summary>
+          <div class="settings-grid">
+            <label>Maximum image edge <input name="max_edge" type="number" min="800" max="5000" value="{{ defaults.max_edge }}"></label>
+            <label>Contrast <input name="contrast" type="number" min=".5" max="2.5" step=".05" value="{{ defaults.contrast }}"></label>
+            <label class="toggle"><input name="denoise" type="checkbox" checked><span>Apply image denoise</span></label>
+            <label class="toggle"><input name="deskew" type="checkbox" checked><span>Correct small image tilt</span></label>
+          </div>
+        </details>
+
+        <button class="primary-button" type="submit"><span>Start analysis</span><b>→</b></button>
+      </form>
+    </section>
+  </main>
+
+  <div class="processing-overlay" id="processing-overlay" hidden>
+    <div class="processing-card"><span class="loader"></span><h2>Starting analysis</h2><p id="processing-status">Uploading images…</p></div>
+  </div>
+
+  <script>
+    const input = document.getElementById('cheques');
+    const dropzone = document.getElementById('dropzone');
+    const count = document.getElementById('file-count');
+    const list = document.getElementById('selected-files');
+    function showFiles(files) {
+      count.textContent = files.length ? `${files.length} image${files.length === 1 ? '' : 's'} selected` : 'No files selected';
+      list.innerHTML = Array.from(files).map(file => `<span>${file.name}<small>${(file.size / 1024 / 1024).toFixed(1)} MB</small></span>`).join('');
+    }
+    input.addEventListener('change', () => showFiles(input.files));
+    ['dragenter', 'dragover'].forEach(event => dropzone.addEventListener(event, event => { event.preventDefault(); dropzone.classList.add('is-dragging'); }));
+    ['dragleave', 'drop'].forEach(event => dropzone.addEventListener(event, event => { event.preventDefault(); dropzone.classList.remove('is-dragging'); }));
+    dropzone.addEventListener('drop', event => { input.files = event.dataTransfer.files; showFiles(input.files); });
+
+    // This overlay only covers the brief upload + redirect moment -- the
+    // browser navigates away to the dedicated results page as soon as
+    // /process responds (a fast 303 redirect; the actual per-image
+    // processing happens after that, in the background, streamed into
+    // the results page itself).
+    document.getElementById('upload-form').addEventListener('submit', () => {
+      document.getElementById('processing-overlay').hidden = false;
+      document.getElementById('processing-status').textContent =
+        `Uploading ${input.files.length} image${input.files.length === 1 ? '' : 's'}…`;
+    });
+  </script>
+</body>
+</html>

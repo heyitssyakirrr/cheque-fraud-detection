@@ -1,0 +1,2 @@
+"""Cheque processing application."""
+

@@ -1,0 +1,131 @@
+<article class="cheque-card" id="{{ item.run_id }}">
+  <div class="cheque-card-header">
+    <div>
+      <span class="result-number">{{ '%02d'|format(loop_index) }}</span>
+      <h2>{{ item.filename }}</h2>
+      <small>Image folder: {{ item.run_id }}</small>
+    </div>
+  </div>
+
+  <div class="metric-grid">
+    <div class="metric">
+      <small>Signature</small>
+      {% set sig = item.result.signature %}
+      {% if sig.status is defined and sig.status != 'ok' %}
+      <strong class="neutral">Needs review</strong>
+      <span>{{ 'Blocked by AI guardrail' if sig.status == 'blocked' else 'AI reply unreadable' }}</span>
+      {% else %}
+      <strong class="{{ 'positive' if sig.exists else 'neutral' }}">
+        {{ 'Detected' if sig.exists else 'Not detected' }}
+      </strong>
+      {% if sig.count is defined %}
+      <span>{{ sig.count }} signature(s){{ ' · ' ~ sig.confidence ~ ' confidence' if sig.confidence }}</span>
+      {% else %}
+      <span>{{ sig.detections|length }} model candidate(s)</span>
+      {% endif %}
+      {% endif %}
+    </div>
+    <div class="metric">
+      <small>Date candidate</small>
+      <strong>{{ item.result.date.date or 'Not read' }}</strong>
+      <span class="{{ 'positive' if item.result.date.status == 'date_candidate' else 'neutral' }}">
+        {% if item.result.date.status == 'date_candidate' %}Calendar valid
+        {% elif item.result.date.status == 'blocked' %}Blocked by AI guardrail · needs review
+        {% elif item.result.date.status == 'no_date' %}No date written
+        {% else %}Needs review{% endif %}
+      </span>
+    </div>
+    {% if item.result.fields is defined %}
+    <div class="metric">
+      <small>Payee candidate</small>
+      <strong>{{ item.result.fields.payee_candidate or 'Not found' }}</strong>
+      <span>OCR-assisted · review required</span>
+    </div>
+    <div class="metric">
+      <small>Amount candidate</small>
+      <strong>{{ item.result.fields.amount_candidate or 'Not found' }}</strong>
+      <span>OCR-assisted · review required</span>
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="artifact-grid">
+    <figure>
+      <div class="image-frame"><img src="/batches/{{ batch_id }}/{{ item.run_id }}/signature/annotated.png" alt="Signature detection annotation"></div>
+      <figcaption><span>Signature zone sent to AI Foundry</span></figcaption>
+    </figure>
+    <figure>
+      <div class="image-frame"><img src="/batches/{{ batch_id }}/{{ item.run_id }}/text/annotated.png" alt="Text detection annotation"></div>
+      <figcaption><span>OCR text coordinates</span></figcaption>
+    </figure>
+    {% if item.result.date.crop_box %}
+    <figure>
+      <div class="image-frame"><img src="/batches/{{ batch_id }}/{{ item.run_id }}/date/crop.png" alt="Date crop"></div>
+      <figcaption><span>Date crop sent to AI Foundry</span></figcaption>
+    </figure>
+    {% endif %}
+  </div>
+
+  <details class="evidence-panel">
+    <summary>Date, AI, and OCR evidence <small>raw model output; confirm before use</small></summary>
+
+    <div class="evidence-grid">
+      <div>
+        <small>Label found by PaddleOCR</small>
+        <strong>{{ item.result.date.anchor_text or 'No anchor found' }}</strong>
+        <small>Crop source</small>
+        <strong>{{ item.result.date.validation }}</strong>
+      </div>
+      <div>
+        <small>Raw digit string</small>
+        <strong>{{ item.result.date.raw_digits or 'No result' }}</strong>
+        <small>Model confidence</small>
+        <strong>{{ item.result.date.confidence or '—' }}</strong>
+        {% if item.result.date.note %}
+        <small>Model note</small>
+        <strong>{{ item.result.date.note }}</strong>
+        {% endif %}
+      </div>
+      <div>
+        <small>Crop coordinates</small>
+        <strong>{{ item.result.date.crop_box or '—' }}</strong>
+        {% if item.result.date.label_bounds_estimated %}
+        <small>Note</small>
+        <strong>One of TARIKH/DATE was estimated -- only one line was detected by PaddleOCR</strong>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if item.result.date.digit_top3 %}
+    <div class="digit-confidence">
+      <small>Digit-by-digit top-3 candidates</small>
+      <table class="digit-table">
+        <thead><tr><th>Slot</th><th>#1</th><th>#2</th><th>#3</th></tr></thead>
+        <tbody>
+        {% for candidates in item.result.date.digit_top3 %}
+          <tr>
+            <td>{{ loop.index0 }}</td>
+            {% for digit, prob in candidates %}
+            <td class="{{ 'digit-rank-1' if loop.index == 1 else '' }}">{{ digit }} <em>{{ '%.1f'|format(prob * 100) }}%</em></td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <div class="ocr-lines">
+      <small>Full PaddleOCR text</small>
+      {% for line in item.result.text.detections %}
+        <span>{{ line.text }} <em>{{ '%.2f'|format(line.confidence) }}</em></span>
+      {% else %}
+        <span>No text regions detected.</span>
+      {% endfor %}
+    </div>
+  </details>
+
+  <div class="cheque-footer">
+    <span>Preprocessing: scale {{ item.result.preprocessing.scale }} · deskew {{ item.result.preprocessing.deskew_degrees }}° · signature scale {{ item.result.preprocessing.signature_scale }} · {{ item.result.text.count }} text regions</span>
+  </div>
+</article>
