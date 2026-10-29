@@ -85,25 +85,47 @@ def inventory_zip(path: Path) -> list[InventoryItem]:
 
 @contextmanager
 def batch_lock(path: Path):
-    """Prevent two manual/scheduler processes from owning one batch on Windows."""
-    import msvcrt
+    """Prevent two manual/scheduler processes from owning one batch.
+
+    Uses msvcrt on Windows and fcntl on Linux/macOS. The OS releases either
+    lock automatically if the process dies, so a crash never leaves a stale lock.
+    """
+    if os.name == "nt":
+        import msvcrt
+
+        def lock(fd: int) -> None:
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+
+        def unlock(fd: int) -> None:
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        def lock(fd: int) -> None:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+        def unlock(fd: int) -> None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
 
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = path.open("a+b")
+    locked = False
     try:
         if path.stat().st_size == 0:
             handle.write(b"0")
             handle.flush()
         handle.seek(0)
         try:
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            lock(handle.fileno())
         except OSError as error:
             raise RuntimeError(f"Batch is already running (lock: {path})") from error
+        locked = True
         yield
     finally:
-        try:
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
-        except OSError:
-            pass
+        if locked:
+            try:
+                handle.seek(0)
+                unlock(handle.fileno())
+            except OSError:
+                pass
         handle.close()

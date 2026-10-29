@@ -882,7 +882,6 @@ flowchart TD
 
 ## ⚠️ Known Limitations
 
-- **Batch locking is Windows-only.** `ingestion.batch_lock` uses `msvcrt`, so `run.py` currently runs on Windows only. Linux support needs a `fcntl`-based lock.
 - **SFTP is not implemented.** `INCOMING_TRANSPORT` accepts only `local`; the validator rejects anything else so the gap is never silent.
 - **The platform guardrail can block a crop.** Blocked crops are marked `blocked` / `REVIEW` for a person to check. If this happens often, raise it with the platform team rather than rewording the prompts to get around it.
 - **AI readings can be wrong.** The model's `confidence` is its own rating, not a calibrated probability. Use `date_status` and calendar validation, and measure accuracy with `ground_truth.csv` before relying on the results.
