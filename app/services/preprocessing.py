@@ -94,33 +94,20 @@ def preprocess(
     return output_bgr, metadata
 
 
-def prepare_signature_image(
-    image_bgr: np.ndarray,
-    options: PreprocessOptions,
-) -> tuple[np.ndarray, float]:
-    """Resize-only image for signature YOLO.
+def native_frame(image_bgr: np.ndarray, deskew_degrees: float) -> np.ndarray:
+    """The original image at its own resolution, aligned with `preprocess`.
 
-    The dedicated signature project does not denoise, increase contrast, or
-    deskew before inference.  Those transforms can erase light pen strokes,
-    so OCR receives its enhanced image while YOLO receives this colour copy.
-
-    Uses `settings.signature_max_long_edge` rather than
-    `options.max_long_edge` -- the latter is what date_extraction.py's crop
-    geometry is calibrated against, so it can't move. Signature detection
-    has no such dependency and benefits from more resolution (matches the
-    max_dim=3000 already validated in script.py), hence its own cap.
+    Crops sent to AI Foundry are cut from this, not from the preprocessed
+    image: that one is upscaled and contrast-boosted for OCR, which blurs
+    the handwriting. Only the deskew rotation is repeated, so coordinates
+    from the preprocessed image map back by dividing by its scale.
     """
+    if not deskew_degrees:
+        return image_bgr
     height, width = image_bgr.shape[:2]
-    short_edge, long_edge = min(height, width), max(height, width)
-    scale = 1.0
-    if short_edge < options.min_short_edge:
-        scale = min(options.min_short_edge / short_edge, options.max_upscale_factor)
-    if long_edge * scale > settings.signature_max_long_edge:
-        scale = settings.signature_max_long_edge / long_edge
-    if abs(scale - 1.0) <= 1e-6:
-        return image_bgr.copy(), 1.0
-    interpolation = cv2.INTER_CUBIC if scale > 1 else cv2.INTER_AREA
-    return cv2.resize(image_bgr, None, fx=scale, fy=scale, interpolation=interpolation), float(scale)
+    matrix = cv2.getRotationMatrix2D((width / 2, height / 2), deskew_degrees, 1)
+    return cv2.warpAffine(image_bgr, matrix, (width, height), flags=cv2.INTER_CUBIC,
+                          borderMode=cv2.BORDER_REPLICATE)
 
 
 def crop_date_zone(image_bgr: np.ndarray) -> tuple[np.ndarray, tuple[int, int]]:

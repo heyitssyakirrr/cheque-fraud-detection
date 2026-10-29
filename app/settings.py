@@ -78,15 +78,10 @@ class Settings(BaseSettings):
     # ------------------------------------------------------------------
     # Signature crop (what gets sent to AI Foundry)
     # ------------------------------------------------------------------
-    signature_max_long_edge: int = 1600
-    """Resize cap for the image the signature zone is cut from. Kept separate
-    from `preprocess_max_long_edge`, which date_extraction.py's geometry is
-    calibrated against."""
-
     signature_zone_left_fraction: float = 0.30
     signature_zone_top_fraction: float = 0.55
     signature_zone_bottom_fraction: float = 0.87
-    """Fixed-fraction crop window (of the resized signature image) where a
+    """Fixed-fraction crop window (of the original image) where a
     signature reliably sits on this cheque template -- generous on purpose.
     This crop is exactly what is sent to AI Foundry, so keep it to the
     signing area: the less of the cheque it shows (names, account number,

@@ -15,7 +15,7 @@ from app.services.preprocessing import (
     PreprocessOptions,
     crop_date_zone,
     crop_signature_zone,
-    prepare_signature_image,
+    native_frame,
     preprocess,
 )
 from app.services.signature_detection import detect as detect_signatures
@@ -97,15 +97,17 @@ def process(
     timings["preprocess"] = time.perf_counter() - mark
     mark = time.perf_counter()
 
-    signature_image, signature_scale = prepare_signature_image(original, options)
-    preprocessing_metadata["signature_scale"] = round(signature_scale, 4)
+    # Crops for AI Foundry come from the original pixels, never from the
+    # upscaled/contrast-boosted OCR image.
+    native = native_frame(original, preprocessing_metadata["deskew_degrees"])
+    preprocessing_metadata["signature_scale"] = 1.0
 
-    signature_zone, signature_offset = crop_signature_zone(signature_image)
+    signature_zone, signature_offset = crop_signature_zone(native)
     signature_result = detect_signatures(
         signature_zone,
         run_dir / "signature",
         crop_offset=signature_offset,
-        full_image=signature_image,
+        full_image=native,
     )
     timings["signature"] = time.perf_counter() - mark
     mark = time.perf_counter()
@@ -125,6 +127,8 @@ def process(
         preprocessed,
         text_lines,
         run_dir / "date",
+        native=native,
+        native_scale=preprocessing_metadata["scale"],
     )
     timings["date"] = time.perf_counter() - mark
 

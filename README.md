@@ -138,7 +138,7 @@ flowchart TD
     A(["Cheque image (JPEG / PNG / TIFF)"]) --> B["cv2.imread<br/>reject corrupt images"]
 
     B --> C["preprocess()<br/>resize, grayscale, optional denoise,<br/>deskew, contrast"]
-    B --> D["prepare_signature_image()<br/>resize only, keep colour"]
+    B --> D["native_frame()<br/>original pixels, no resize"]
 
     subgraph SigBranch["Signature Branch"]
         D --> E["crop_signature_zone()<br/>signing area only"]
@@ -172,8 +172,8 @@ The pipeline deliberately produces **two different copies** of the image, becaus
 
 | Copy | Steps | Why |
 | :--- | :--- | :--- |
-| **OCR copy** (`preprocess`) | Upscale small scans (short edge below 1000 px, up to 4×) → cap the long edge (`PREPROCESS_MAX_LONG_EDGE`, default 3000) → grayscale → optional denoise → deskew (only if the angle is within ±8°, otherwise ignored as unreliable) → contrast boost | Clean, high-contrast text is easier for OCR and for reading the date digits. |
-| **Signature copy** (`prepare_signature_image`) | Resize only, **colour preserved**, long edge capped at `SIGNATURE_MAX_LONG_EDGE` (1600) | Denoise / contrast / deskew can erase light pen strokes, so the signature crop is cut from an untouched colour copy. |
+| **OCR copy** (`preprocess`) | Upscale small scans (short edge below 1000 px, up to 4×) → cap the long edge (`PREPROCESS_MAX_LONG_EDGE`, default 3000) → grayscale → optional denoise → deskew (only if the angle is within ±8°, otherwise ignored as unreliable) → contrast boost | Clean, high-contrast text is easier for PaddleOCR to find the TARIKH/DATE labels. Used only to locate things, never sent. |
+| **Native copy** (`native_frame`) | The original pixels at their own resolution, only rotated by the same deskew angle (if any) | Both crops sent to AI Foundry (signature zone and date boxes) are cut from this. Upscaling or contrast boosting blurs handwriting, so the model sees the same quality as a manual crop. |
 
 The original image is never modified.
 
@@ -217,11 +217,11 @@ Key ideas worth knowing:
 
 ### Stage 4: Reading the digits (AI Foundry)
 
-The date crop is upscaled 2.5x (so small handwriting stays legible), capped at `LLM_IMAGE_MAX_LONG_EDGE`, and sent to AI Foundry, which returns the digits left to right. PaddleOCR is used only to *locate* the date boxes; it runs locally and nothing it reads is sent.
+The date box is located on the OCR copy, then cut from the native copy at its original resolution (never enlarged), capped at `LLM_IMAGE_MAX_LONG_EDGE`, and sent to AI Foundry, which returns the digits left to right. PaddleOCR is used only to *locate* the date boxes; it runs locally and nothing it reads is sent.
 
 ```mermaid
 flowchart TD
-    A["Date crop (2.5x upscaled)"] --> B["PNG, base64 data URL"]
+    A["Date crop (original resolution)"] --> B["PNG, base64 data URL"]
     B --> C["POST LLM_BASE_URL + LLM_CHAT_PATH<br/>system prompt + date prompt + image"]
     C --> D{"finish_reason"}
     D -- "content_filter" --> E["status = blocked<br/>read the date manually"]

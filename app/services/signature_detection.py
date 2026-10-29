@@ -90,7 +90,7 @@ def detect(
             )
 
     if save_artifacts:
-        cv2.imwrite(str(output_dir / "crop_sent.png"), image)
+        cv2.imwrite(str(output_dir / "crop_sent.png"), foundry_client.fit_for_upload(image))
         canvas = (full_image if full_image is not None else image).copy()
         colour = (0, 170, 0) if result["exists"] else (0, 140, 255)
         cv2.rectangle(canvas, (zone_box[0], zone_box[1]), (zone_box[2], zone_box[3]), colour, 3)

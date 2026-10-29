@@ -206,8 +206,15 @@ def extract(
     image: np.ndarray,
     lines: list[dict[str, Any]],
     output_dir: Path,
+    native: np.ndarray | None = None,
+    native_scale: float = 1.0,
 ) -> dict[str, Any]:
-    """PaddleOCR label -> right-side crop -> AI Foundry reads the digits."""
+    """PaddleOCR label -> right-side crop -> AI Foundry reads the digits.
+
+    The box is located on `image` (the preprocessed OCR image). When
+    `native` is given, the crop itself is cut from it instead -- the
+    original pixels -- with the box divided by `native_scale`.
+    """
     if settings.save_artifacts:
         output_dir.mkdir(parents=True, exist_ok=True)
     tarikh, date = _find_label_lines(lines, image.shape)
@@ -225,6 +232,15 @@ def extract(
         anchor_text = ""
         anchor_mode = "Public Bank upper-right fallback"
 
+    if native is not None:
+        height, width = native.shape[:2]
+        crop_box = (
+            max(0, int(crop_box[0] / native_scale)),
+            max(0, int(crop_box[1] / native_scale)),
+            min(width, round(crop_box[2] / native_scale)),
+            min(height, round(crop_box[3] / native_scale)),
+        )
+        image = native
     x0, y0, x1, y1 = crop_box
     crop = image[y0:y1, x0:x1]
     result: dict[str, Any] = {
@@ -245,9 +261,8 @@ def extract(
         _write_csv(output_dir, result)
         return result
 
-    # Upscale so small handwritten digits stay legible to the vision model;
-    # foundry_client caps the long edge again before sending.
-    crop = cv2.resize(crop, None, fx=2.5, fy=2.5, interpolation=cv2.INTER_CUBIC)
+    # Sent at its original resolution: upscaling adds blur, not detail.
+    crop = foundry_client.fit_for_upload(crop)
     if settings.save_artifacts:
         cv2.imwrite(str(output_dir / "crop.png"), crop)
 

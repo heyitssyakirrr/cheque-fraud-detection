@@ -54,14 +54,20 @@ def _http() -> httpx.Client:
     return _client
 
 
+def fit_for_upload(image: np.ndarray) -> np.ndarray:
+    """Shrink (never enlarge) a crop so its long edge is at most
+    `llm_image_max_long_edge`. Callers save this result, so the debug image
+    is exactly what the model sees."""
+    long_edge = max(image.shape[:2])
+    if long_edge <= settings.llm_image_max_long_edge:
+        return image
+    scale = settings.llm_image_max_long_edge / long_edge
+    return cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+
+
 def encode_png(image: np.ndarray) -> str:
-    """Encode a crop as a PNG data URL, capped at `llm_image_max_long_edge`."""
-    height, width = image.shape[:2]
-    long_edge = max(height, width)
-    if long_edge > settings.llm_image_max_long_edge:
-        scale = settings.llm_image_max_long_edge / long_edge
-        image = cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
-    ok, buffer = cv2.imencode(".png", image)
+    """Encode a crop as a lossless PNG data URL, capped at `llm_image_max_long_edge`."""
+    ok, buffer = cv2.imencode(".png", fit_for_upload(image))
     if not ok:
         raise ValueError("Could not encode crop as PNG")
     return "data:image/png;base64," + base64.b64encode(buffer.tobytes()).decode("ascii")

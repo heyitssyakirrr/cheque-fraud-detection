@@ -34,7 +34,7 @@ from app.ingestion import (  # noqa: E402
 from app.manifest import Manifest  # noqa: E402
 from app.pipeline import process  # noqa: E402
 from app.services import text_detection  # noqa: E402
-from app.services.img_conversion import convert_img_bytes_to_jpg  # noqa: E402
+from app.services.img_conversion import convert_img_bytes_to_png  # noqa: E402
 from app.services.preprocessing import PreprocessOptions  # noqa: E402
 
 
@@ -72,7 +72,7 @@ def _atomic_json(path: Path, value: dict) -> None:
 def _process_one(task: dict) -> dict:
     """Worker function: success is made durable before the parent sees it."""
     started, counter = datetime.now(), time.perf_counter()
-    jpeg = Path(task["tmp_dir"]) / f"{uuid.uuid4().hex}.jpg"
+    temp_png = Path(task["tmp_dir"]) / f"{uuid.uuid4().hex}.png"
     try:
         if task["source_dir"]:
             # Folder mode: the pipeline reads the image file directly.
@@ -80,8 +80,8 @@ def _process_one(task: dict) -> dict:
         else:
             with zipfile.ZipFile(task["zip_path"]) as archive:
                 raw = archive.read(task["zip_member"])
-            convert_img_bytes_to_jpg(raw, jpeg)
-            source = jpeg
+            convert_img_bytes_to_png(raw, temp_png)
+            source = temp_png
         _, result = process(source, task["options"], task["batch_id"], task["sequence"],
                             Path(task["zip_member"]).name)
         timings = result.get("timings", {})
@@ -110,7 +110,7 @@ def _process_one(task: dict) -> dict:
     except Exception as error:  # A bad scan must not end the whole batch.
         return {"cheque_id": task["cheque_id"], "ok": False, "error": str(error)}
     finally:
-        jpeg.unlink(missing_ok=True)
+        temp_png.unlink(missing_ok=True)
 
 
 def _import_completions(manifest: Manifest, directory: Path, output_csv: Path) -> int:
@@ -197,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
     output_csv, failed_csv = batch_dir / f"{batch_id}_output.csv", batch_dir / f"{batch_id}_failed.csv"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     with batch_lock(batch_dir / ".lock"):
-        for leftover in tmp_dir.glob("*.jpg"):
+        for leftover in [*tmp_dir.glob("*.jpg"), *tmp_dir.glob("*.png")]:
             leftover.unlink(missing_ok=True)
         folder = args.folder or settings.uat_image_dir
         if folder is not None:
