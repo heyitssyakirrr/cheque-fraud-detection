@@ -584,7 +584,7 @@ python run.py --batch-id 20260916
 
 - Files are read in place: there's no ZIP, no copy and no JPEG conversion. Subfolders are included, and other file types are skipped.
 - `bank_code` is `PBB`/`PIBB` when the file is under a folder of that name, otherwise `UAT`.
-- Resume works the same way: rerun the same command. If you add or remove files, use a new `--batch-id`.
+- Every image in the folder is processed. To add more, drop them into the folder and rerun the same command: only the new ones are processed, and all results end up in the same output CSV.
 - Without `--folder`, the runner reads the daily ZIP exactly as in production.
 
 ### Scheduling a daily run (Windows Task Scheduler)

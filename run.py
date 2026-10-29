@@ -29,7 +29,7 @@ if settings.threads_per_worker:
         os.environ.setdefault(name, str(settings.threads_per_worker))
 
 from app.ingestion import (  # noqa: E402
-    batch_lock, inventory_fingerprint, inventory_folder, inventory_zip, sha256_file, stage_local_zip,
+    batch_lock, inventory_folder, inventory_zip, sha256_file, stage_local_zip,
 )
 from app.manifest import Manifest  # noqa: E402
 from app.pipeline import process  # noqa: E402
@@ -205,7 +205,9 @@ def main(argv: list[str] | None = None) -> int:
             inventory = inventory_folder(source_dir)
             if not inventory:
                 raise RuntimeError(f"Folder contains no PNG/JPEG/TIFF files: {source_dir}")
-            fingerprint = "folder:" + inventory_fingerprint(inventory)
+            # Keyed on the folder path, not its contents, so PNGs added later
+            # join this batch instead of needing a new batch ID.
+            fingerprint = f"folder:{source_dir}"
             print(f"Reading images directly from folder {source_dir}", flush=True)
         else:
             source_dir = None
@@ -216,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
             fingerprint = sha256_file(zip_path)
         manifest = Manifest(batch_dir / "manifest.db", batch_id, fingerprint, settings.max_attempts)
         try:
-            manifest.seed(inventory)
+            manifest.seed(inventory, allow_additions=source_dir is not None)
             manifest.recover_interrupted()
             manifest.rebuild_output(output_csv)  # repairs crash ambiguity before new appends
             recovered = _import_completions(manifest, completion_dir, output_csv)

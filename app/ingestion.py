@@ -114,14 +114,6 @@ def inventory_folder(folder: Path) -> list[InventoryItem]:
     return items
 
 
-def inventory_fingerprint(items: list[InventoryItem]) -> str:
-    """Cheap fingerprint of a folder inventory (names and sizes, no file reads)."""
-    digest = hashlib.sha256()
-    for item in items:
-        digest.update(f"{item.cheque_id}\0{item.size}\n".encode())
-    return digest.hexdigest()
-
-
 @contextmanager
 def batch_lock(path: Path):
     """Prevent two manual/scheduler processes from owning one batch.

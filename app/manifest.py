@@ -57,7 +57,13 @@ class Manifest:
     def _set_meta(self, key: str, value: str) -> None:
         self.db.execute("INSERT OR REPLACE INTO metadata(key, value) VALUES (?, ?)", (key, value))
 
-    def seed(self, items: Iterable[InventoryItem]) -> None:
+    def seed(self, items: Iterable[InventoryItem], allow_additions: bool = False) -> None:
+        """Register the batch inventory. A ZIP must match the manifest exactly;
+        with `allow_additions` (folder mode) new files are appended after the
+        existing ones and files already recorded keep their results."""
+        if allow_additions:
+            self._add_new(list(items))
+            return
         rows = [(i.cheque_id, i.bank_code, i.zip_member, i.sequence, i.crc, i.size, "PENDING") for i in items]
         with self.db:
             self.db.executemany("""
@@ -68,6 +74,21 @@ class Manifest:
         count = self.db.execute("SELECT COUNT(*) FROM cheques").fetchone()[0]
         if count != len(rows):
             raise RuntimeError("ZIP inventory differs from the existing manifest; refusing unsafe resume.")
+
+    def _add_new(self, items: list[InventoryItem]) -> None:
+        known = {row[0] for row in self.db.execute("SELECT cheque_id FROM cheques")}
+        next_sequence = self.db.execute("SELECT COALESCE(MAX(sequence), 0) FROM cheques").fetchone()[0] + 1
+        rows = []
+        for item in items:
+            if item.cheque_id in known:
+                continue
+            rows.append((item.cheque_id, item.bank_code, item.zip_member, next_sequence, item.crc, item.size, "PENDING"))
+            next_sequence += 1
+        with self.db:
+            self.db.executemany("""
+                INSERT INTO cheques (cheque_id, bank_code, zip_member, sequence, crc, size, status)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, rows)
 
     def recover_interrupted(self) -> None:
         with self.db:
