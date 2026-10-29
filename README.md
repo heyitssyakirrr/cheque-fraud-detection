@@ -571,7 +571,7 @@ Output: data\batches\20260916\20260916_output.csv
 Status: {'DONE': 19997, 'PERMANENT_FAILED': 3}
 ```
 
-**To resume after a crash, power loss, or Ctrl+C: run the exact same command again.** Finished cheques are skipped, interrupted ones restart, and the CSV is repaired first.
+**To resume after a crash, power loss, or Ctrl+C: run the exact same command again.** Finished cheques are skipped, interrupted ones restart, and the CSV is repaired first. To start a ZIP batch over from scratch instead, add `--fresh`.
 
 ### UAT: reading a folder of images instead of a ZIP
 
@@ -585,7 +585,7 @@ python run.py --batch-id 20260916
 
 - Files are read in place: there's no ZIP, no copy and no JPEG conversion. Subfolders are included, and other file types are skipped.
 - `bank_code` is `PBB`/`PIBB` when the file is under a folder of that name, otherwise `UAT`.
-- Every image in the folder is processed. To add more, drop them into the folder and rerun the same command: only the new ones are processed, and all results end up in the same output CSV.
+- **Every run starts fresh**: all images in the folder are processed again and the previous results for that batch (CSV, crops, manifest) are overwritten. No need to delete the batch folder first.
 - Without `--folder`, the runner reads the daily ZIP exactly as in production.
 
 ### Scheduling a daily run (Windows Task Scheduler)

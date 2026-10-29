@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 import time
 import uuid
@@ -183,11 +184,25 @@ def _run_tasks(manifest: Manifest, tasks: list[dict], workers: int, completion_d
                 submit()
 
 
+def _clear_batch(batch_dir: Path) -> None:
+    """Delete everything in a batch folder except the lock file we hold."""
+    for entry in batch_dir.iterdir():
+        if entry.name == ".lock":
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry)
+        else:
+            entry.unlink()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Process one daily cheque ZIP (or a UAT image folder) resumably.")
     parser.add_argument("--batch-id", default=f"{datetime.now():%Y%m%d}", help="Date in YYYYMMDD form")
     parser.add_argument("--folder", type=Path, default=None,
                         help="UAT: read PNG/JPEG/TIFF files from this folder instead of the daily ZIP")
+    parser.add_argument("--fresh", action="store_true",
+                        help="discard this batch's previous results and process everything again "
+                             "(always on in folder mode; ZIP mode resumes unless this is given)")
     args = parser.parse_args(argv)
     batch_id = args.batch_id
     if not (len(batch_id) == 8 and batch_id.isdigit()):
@@ -197,16 +212,18 @@ def main(argv: list[str] | None = None) -> int:
     output_csv, failed_csv = batch_dir / f"{batch_id}_output.csv", batch_dir / f"{batch_id}_failed.csv"
     tmp_dir.mkdir(parents=True, exist_ok=True)
     with batch_lock(batch_dir / ".lock"):
+        folder = args.folder or settings.uat_image_dir
+        if args.fresh or folder is not None:
+            # UAT reruns overwrite: drop the old manifest, CSVs and crop folders.
+            _clear_batch(batch_dir)
+            tmp_dir.mkdir(parents=True, exist_ok=True)
         for leftover in [*tmp_dir.glob("*.jpg"), *tmp_dir.glob("*.png")]:
             leftover.unlink(missing_ok=True)
-        folder = args.folder or settings.uat_image_dir
         if folder is not None:
             source_dir, zip_path = folder.resolve(), None
             inventory = inventory_folder(source_dir)
             if not inventory:
                 raise RuntimeError(f"Folder contains no PNG/JPEG/TIFF files: {source_dir}")
-            # Keyed on the folder path, not its contents, so PNGs added later
-            # join this batch instead of needing a new batch ID.
             fingerprint = f"folder:{source_dir}"
             print(f"Reading images directly from folder {source_dir}", flush=True)
         else:

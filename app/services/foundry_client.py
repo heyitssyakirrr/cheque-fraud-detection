@@ -96,6 +96,19 @@ def _message_text(content: Any) -> str:
     return content if isinstance(content, str) else ""
 
 
+def _filter_details(payload: dict[str, Any], choice: dict[str, Any]) -> dict[str, Any]:
+    """Whatever the gateway says about *why* it filtered: Azure-style
+    `prompt_filter_results` / `content_filter_results` (which category
+    fired: hate, sexual, violence, self_harm, jailbreak, indirect_attack,
+    pii, custom blocklist, ...) plus any other top-level field it adds."""
+    details = {key: value for key, value in payload.items()
+               if key not in {"choices", "usage", "id", "object", "created", "model", "system_fingerprint"}}
+    for key in ("content_filter_results", "content_filter_result"):
+        if key in choice:
+            details[f"choice.{key}"] = choice[key]
+    return details
+
+
 def ask_about_image(purpose: str, system_prompt: str, user_prompt: str, image: np.ndarray) -> dict[str, Any]:
     """Send one crop with its prompt and return a result record.
 
@@ -177,9 +190,11 @@ def _result_from_response(purpose: str, response: httpx.Response, elapsed: float
     if finish_reason == "content_filter":
         # prompt_tokens == 0: blocked before the model read the request.
         where = "request" if usage.get("prompt_tokens") == 0 else "answer"
-        record.update(status="blocked", note=f"blocked by the platform guardrail on the {where}")
-        logger.warning("Foundry %s: %s (tokens prompt=%s completion=%s)",
-                       purpose, record["note"], usage.get("prompt_tokens"), usage.get("completion_tokens"))
+        record.update(status="blocked", note=f"blocked by the platform guardrail on the {where}",
+                      filter_details=_filter_details(payload, choice))
+        logger.warning("Foundry %s: %s (tokens prompt=%s completion=%s) filter details: %s",
+                       purpose, record["note"], usage.get("prompt_tokens"), usage.get("completion_tokens"),
+                       json.dumps(record["filter_details"])[:2000])
         return record
 
     data = _parse_json_object(text)
