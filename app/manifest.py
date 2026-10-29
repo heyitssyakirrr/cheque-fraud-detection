@@ -41,7 +41,7 @@ class Manifest:
         """)
         found = self._meta("fingerprint")
         if found and found != fingerprint:
-            raise RuntimeError("Existing manifest belongs to a different ZIP; use a new batch ID.")
+            raise RuntimeError("Existing manifest belongs to a different ZIP or folder; use a new batch ID.")
         if not found:
             self._set_meta("batch_id", batch_id)
             self._set_meta("fingerprint", fingerprint)

@@ -83,6 +83,45 @@ def inventory_zip(path: Path) -> list[InventoryItem]:
     ]
 
 
+FOLDER_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".tif", ".tiff"}
+
+
+def inventory_folder(folder: Path) -> list[InventoryItem]:
+    """Inventory plain image files in a folder (UAT input, instead of a ZIP).
+
+    Subfolders are included. A file under PBB/ or PIBB/ keeps that bank code;
+    anything else is labelled "UAT". Files are read in place, never copied.
+    """
+    if not folder.is_dir():
+        raise FileNotFoundError(f"Input folder not found: {folder}")
+    files = sorted(
+        (path for path in folder.rglob("*")
+         if path.is_file() and path.suffix.lower() in FOLDER_IMAGE_SUFFIXES),
+        key=lambda path: path.relative_to(folder).as_posix(),
+    )
+    items = []
+    for index, path in enumerate(files, start=1):
+        relative = path.relative_to(folder).as_posix()
+        top = relative.split("/", 1)[0]
+        items.append(InventoryItem(
+            cheque_id=relative,
+            bank_code=top if top in {"PBB", "PIBB"} and "/" in relative else "UAT",
+            zip_member=relative,
+            sequence=index,
+            crc=0,
+            size=path.stat().st_size,
+        ))
+    return items
+
+
+def inventory_fingerprint(items: list[InventoryItem]) -> str:
+    """Cheap fingerprint of a folder inventory (names and sizes, no file reads)."""
+    digest = hashlib.sha256()
+    for item in items:
+        digest.update(f"{item.cheque_id}\0{item.size}\n".encode())
+    return digest.hexdigest()
+
+
 @contextmanager
 def batch_lock(path: Path):
     """Prevent two manual/scheduler processes from owning one batch.

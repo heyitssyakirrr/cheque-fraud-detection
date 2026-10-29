@@ -1,8 +1,12 @@
-"""Resumable ZIP batch runner.
+"""Resumable batch runner for a ZIP of .img files, or a folder of images.
 
-Usage on a laptop: put ``20260916_cheques.zip`` in ``data/incoming`` and run
-``python run.py --batch-id 20260916``.  The live output is written to
-``data/batches/20260916/20260916_output.csv``.
+Production: put ``20260916_cheques.zip`` in ``data/incoming`` and run
+``python run.py --batch-id 20260916``.
+
+UAT: point it at a folder of PNG/JPEG/TIFF files instead, read in place:
+``python run.py --batch-id 20260916 --folder /path/to/pngs``.
+
+The live output is written to ``data/batches/20260916/20260916_output.csv``.
 """
 
 from __future__ import annotations
@@ -24,7 +28,9 @@ if settings.threads_per_worker:
     for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
         os.environ.setdefault(name, str(settings.threads_per_worker))
 
-from app.ingestion import batch_lock, inventory_zip, sha256_file, stage_local_zip  # noqa: E402
+from app.ingestion import (  # noqa: E402
+    batch_lock, inventory_fingerprint, inventory_folder, inventory_zip, sha256_file, stage_local_zip,
+)
 from app.manifest import Manifest  # noqa: E402
 from app.pipeline import process  # noqa: E402
 from app.services import text_detection  # noqa: E402
@@ -68,10 +74,15 @@ def _process_one(task: dict) -> dict:
     started, counter = datetime.now(), time.perf_counter()
     jpeg = Path(task["tmp_dir"]) / f"{uuid.uuid4().hex}.jpg"
     try:
-        with zipfile.ZipFile(task["zip_path"]) as archive:
-            raw = archive.read(task["zip_member"])
-        convert_img_bytes_to_jpg(raw, jpeg)
-        _, result = process(jpeg, task["options"], task["batch_id"], task["sequence"],
+        if task["source_dir"]:
+            # Folder mode: the pipeline reads the image file directly.
+            source = Path(task["source_dir"]) / task["zip_member"]
+        else:
+            with zipfile.ZipFile(task["zip_path"]) as archive:
+                raw = archive.read(task["zip_member"])
+            convert_img_bytes_to_jpg(raw, jpeg)
+            source = jpeg
+        _, result = process(source, task["options"], task["batch_id"], task["sequence"],
                             Path(task["zip_member"]).name)
         timings = result.get("timings", {})
         signature = result["signature"]
@@ -115,9 +126,11 @@ def _import_completions(manifest: Manifest, directory: Path, output_csv: Path) -
     return imported
 
 
-def _task(row, batch_id: str, zip_path: Path, options: PreprocessOptions, tmp_dir: Path, completion_dir: Path) -> dict:
+def _task(row, batch_id: str, zip_path: Path | None, source_dir: Path | None, options: PreprocessOptions,
+          tmp_dir: Path, completion_dir: Path) -> dict:
     return {"cheque_id": row["cheque_id"], "bank_code": row["bank_code"], "zip_member": row["zip_member"],
-            "sequence": row["sequence"], "batch_id": batch_id, "zip_path": str(zip_path), "options": options,
+            "sequence": row["sequence"], "batch_id": batch_id, "zip_path": str(zip_path or ""),
+            "source_dir": str(source_dir or ""), "options": options,
             "tmp_dir": str(tmp_dir), "completion_dir": str(completion_dir)}
 
 
@@ -171,8 +184,10 @@ def _run_tasks(manifest: Manifest, tasks: list[dict], workers: int, completion_d
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Process one daily cheque ZIP resumably.")
+    parser = argparse.ArgumentParser(description="Process one daily cheque ZIP (or a UAT image folder) resumably.")
     parser.add_argument("--batch-id", default=f"{datetime.now():%Y%m%d}", help="Date in YYYYMMDD form")
+    parser.add_argument("--folder", type=Path, default=None,
+                        help="UAT: read PNG/JPEG/TIFF files from this folder instead of the daily ZIP")
     args = parser.parse_args(argv)
     batch_id = args.batch_id
     if not (len(batch_id) == 8 and batch_id.isdigit()):
@@ -184,11 +199,21 @@ def main(argv: list[str] | None = None) -> int:
     with batch_lock(batch_dir / ".lock"):
         for leftover in tmp_dir.glob("*.jpg"):
             leftover.unlink(missing_ok=True)
-        zip_path = stage_local_zip(source_zip, settings.batch_zip_path(batch_id))
-        inventory = inventory_zip(zip_path)
-        if not inventory:
-            raise RuntimeError("ZIP contains no .img files under PBB/ or PIBB/")
-        manifest = Manifest(batch_dir / "manifest.db", batch_id, sha256_file(zip_path), settings.max_attempts)
+        if args.folder is not None:
+            source_dir, zip_path = args.folder.resolve(), None
+            inventory = inventory_folder(source_dir)
+            if not inventory:
+                raise RuntimeError(f"Folder contains no PNG/JPEG/TIFF files: {source_dir}")
+            fingerprint = "folder:" + inventory_fingerprint(inventory)
+            print(f"Reading images directly from folder {source_dir}", flush=True)
+        else:
+            source_dir = None
+            zip_path = stage_local_zip(source_zip, settings.batch_zip_path(batch_id))
+            inventory = inventory_zip(zip_path)
+            if not inventory:
+                raise RuntimeError("ZIP contains no .img files under PBB/ or PIBB/")
+            fingerprint = sha256_file(zip_path)
+        manifest = Manifest(batch_dir / "manifest.db", batch_id, fingerprint, settings.max_attempts)
         try:
             manifest.seed(inventory)
             manifest.recover_interrupted()
@@ -205,11 +230,11 @@ def main(argv: list[str] | None = None) -> int:
                 denoise=settings.preprocess_denoise,
                 deskew=settings.preprocess_deskew,
             )
-            _run_tasks(manifest, [_task(row, batch_id, zip_path, options, tmp_dir, completion_dir) for row in todo], workers, completion_dir, output_csv)
+            _run_tasks(manifest, [_task(row, batch_id, zip_path, source_dir, options, tmp_dir, completion_dir) for row in todo], workers, completion_dir, output_csv)
             manifest.write_failures(failed_csv)
             counts = manifest.counts()
             print(f"Output: {output_csv}\nStatus: {counts}", flush=True)
-            if not manifest.todo() and not manifest.failures() and settings.cleanup_zip_after_batch:
+            if zip_path and not manifest.todo() and not manifest.failures() and settings.cleanup_zip_after_batch:
                 zip_path.unlink(missing_ok=True)
             return 1 if manifest.todo() else (2 if manifest.failures() else 0)
         finally:

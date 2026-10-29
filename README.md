@@ -571,6 +571,19 @@ Status: {'DONE': 19997, 'PERMANENT_FAILED': 3}
 
 **To resume after a crash, power loss, or Ctrl+C: run the exact same command again.** Finished cheques are skipped, interrupted ones restart, and the CSV is repaired first.
 
+### UAT: reading a folder of images instead of a ZIP
+
+When there's no ZIP yet, point the runner at a folder of PNG, JPEG or TIFF files:
+
+```bash
+python run.py --batch-id 20260916 --folder /path/to/uat_pngs
+```
+
+- Files are read in place: there's no ZIP, no copy and no JPEG conversion. Subfolders are included, and other file types are skipped.
+- `bank_code` is `PBB`/`PIBB` when the file is under a folder of that name, otherwise `UAT`.
+- Resume works the same way: rerun the same command. If you add or remove files, use a new `--batch-id`.
+- Without `--folder`, the runner reads the daily ZIP exactly as in production.
+
 ### Scheduling a daily run (Windows Task Scheduler)
 
 ```powershell
