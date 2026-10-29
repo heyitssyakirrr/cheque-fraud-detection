@@ -217,6 +217,12 @@ class Settings(BaseSettings):
     incoming_root: str = "data/incoming"
     """Directory the runner looks in for the daily ZIP."""
 
+    uat_image_folder: str = "/pythonITD/dwh_312/Cheque_Fraud_Detection/img"
+    """UAT only: when set, run.py reads PNG/JPEG/TIFF files from this folder
+    instead of the daily ZIP. Set UAT_IMAGE_FOLDER= (empty) in .env for
+    production so the ZIP is used. A relative path is resolved from the
+    project root."""
+
     batch_zip_name_pattern: str = "{date}_cheques.zip"
     """Expected filename for a given `--batch-id`, e.g. "20260916_cheques.zip"."""
 
@@ -306,6 +312,13 @@ class Settings(BaseSettings):
     @property
     def incoming_dir(self) -> Path:
         value = Path(self.incoming_root)
+        return value if value.is_absolute() else self.root / value
+
+    @property
+    def uat_image_dir(self) -> Path | None:
+        if not self.uat_image_folder.strip():
+            return None
+        value = Path(self.uat_image_folder)
         return value if value.is_absolute() else self.root / value
 
     @property

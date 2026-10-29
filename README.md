@@ -510,6 +510,7 @@ WORKER_COUNT=1
 | :--- | :--- | :--- |
 | `INCOMING_TRANSPORT` | `local` | Only `local` is implemented. Any other value fails validation at startup. |
 | `INCOMING_ROOT` | `data/incoming` | Folder searched for the daily ZIP. |
+| `UAT_IMAGE_FOLDER` | `/pythonITD/dwh_312/Cheque_Fraud_Detection/img` | UAT: read images from this folder instead of the ZIP. Set it empty for production. |
 | `BATCH_ZIP_NAME_PATTERN` | `{date}_cheques.zip` | Expected ZIP name for a batch ID. |
 | `STAGING_DIR_NAME` | `data/staging` | Where the ZIP copy is staged. |
 | `MAX_ATTEMPTS` | `3` | Total attempts per cheque before it is permanently failed. |
@@ -573,11 +574,13 @@ Status: {'DONE': 19997, 'PERMANENT_FAILED': 3}
 
 ### UAT: reading a folder of images instead of a ZIP
 
-When there's no ZIP yet, point the runner at a folder of PNG, JPEG or TIFF files:
+When there's no ZIP yet, the runner reads PNG, JPEG or TIFF files from `UAT_IMAGE_FOLDER` (default `/pythonITD/dwh_312/Cheque_Fraud_Detection/img`):
 
 ```bash
-python run.py --batch-id 20260916 --folder /path/to/uat_pngs
+python run.py --batch-id 20260916
 ```
+
+`--folder /other/path` overrides it for one run. **For production, set `UAT_IMAGE_FOLDER=` (empty) in `.env`** so the daily ZIP is read.
 
 - Files are read in place: there's no ZIP, no copy and no JPEG conversion. Subfolders are included, and other file types are skipped.
 - `bank_code` is `PBB`/`PIBB` when the file is under a folder of that name, otherwise `UAT`.

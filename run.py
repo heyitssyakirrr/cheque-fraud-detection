@@ -199,8 +199,9 @@ def main(argv: list[str] | None = None) -> int:
     with batch_lock(batch_dir / ".lock"):
         for leftover in tmp_dir.glob("*.jpg"):
             leftover.unlink(missing_ok=True)
-        if args.folder is not None:
-            source_dir, zip_path = args.folder.resolve(), None
+        folder = args.folder or settings.uat_image_dir
+        if folder is not None:
+            source_dir, zip_path = folder.resolve(), None
             inventory = inventory_folder(source_dir)
             if not inventory:
                 raise RuntimeError(f"Folder contains no PNG/JPEG/TIFF files: {source_dir}")
