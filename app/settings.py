@@ -75,6 +75,12 @@ class Settings(BaseSettings):
     """Crops are downscaled to at most this many pixels on the long edge
     before sending -- plenty for a signature zone or date boxes."""
 
+    llm_image_min_long_edge: int = 1024
+    """Crops smaller than this are enlarged once (bicubic, from the original
+    pixels) before sending. On a low-resolution scan a handwritten digit can
+    be only ~15 px tall, too small for the vision model to read reliably,
+    and tiny crops have also been refused by the guardrail. 0 = never enlarge."""
+
     # ------------------------------------------------------------------
     # Signature crop (what gets sent to AI Foundry)
     # ------------------------------------------------------------------
@@ -128,17 +134,16 @@ class Settings(BaseSettings):
     with both edges measured directly this only needs to cover natural
     handwriting variance."""
 
-    date_field_bottom_extra_pad_ratio: float = 0.35
+    date_field_bottom_extra_pad_ratio: float = 0.6
     """Extra padding added only below DATE's own bottom edge, on top of the
     symmetric safety pad above. Handwritten descenders and closed loops (a
     looped '6' or '2') extend further down than a printed line's own bottom
     edge predicts -- asymmetric on purpose; the top edge needs no
     equivalent since TARIKH's top edge has no handwriting above it."""
 
-    date_field_width_typical_heights: float = 17.0
-    """Horizontal crop width, expressed in multiples of the document's
-    typical single-line text height (a stable, format-invariant reference --
-    see `_typical_line_height`), not the anchor label's own box height."""
+    date_field_right_edge_fraction: float = 0.99
+    """Right edge of the date crop, as a fraction of the page width. The crop
+    runs from the TARIKH/DATE labels to here, so all six date boxes are kept."""
 
     date_field_max_width_fraction: float = 0.55
     date_field_max_height_fraction: float = 0.32

@@ -55,14 +55,17 @@ def _http() -> httpx.Client:
 
 
 def fit_for_upload(image: np.ndarray) -> np.ndarray:
-    """Shrink (never enlarge) a crop so its long edge is at most
-    `llm_image_max_long_edge`. Callers save this result, so the debug image
-    is exactly what the model sees."""
+    """Resize a crop once so its long edge is between `llm_image_min_long_edge`
+    and `llm_image_max_long_edge`. Callers save this result, so the debug
+    image is exactly what the model sees."""
     long_edge = max(image.shape[:2])
-    if long_edge <= settings.llm_image_max_long_edge:
-        return image
-    scale = settings.llm_image_max_long_edge / long_edge
-    return cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    if long_edge > settings.llm_image_max_long_edge:
+        scale = settings.llm_image_max_long_edge / long_edge
+        return cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    if 0 < long_edge < settings.llm_image_min_long_edge:
+        scale = settings.llm_image_min_long_edge / long_edge
+        return cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
+    return image
 
 
 def encode_png(image: np.ndarray) -> str:

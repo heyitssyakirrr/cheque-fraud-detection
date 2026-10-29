@@ -142,20 +142,25 @@ def _right_of_labels(
     lines: list[dict[str, Any]],
     image_shape: tuple[int, ...],
 ) -> tuple[tuple[int, int, int, int], bool]:
-    """Crop tightly around the handwritten date cell, right of TARIKH/DATE."""
+    """Crop the date row: from the TARIKH/DATE labels to the cheque's right edge.
+
+    The labels stay in the crop so the model can see it is a date field, and
+    the date boxes are the last thing on that row, so running to the right
+    edge always keeps all six boxes regardless of how wide the writing is.
+    """
     height, width = image_shape[:2]
     top_y, bottom_y, was_estimated = _vertical_bounds_from_labels(tarikh, date, lines)
     typical_height = _typical_line_height(lines) or max(1.0, bottom_y - top_y)
 
-    right_edges = [_bounds(line["box"])[2] for line in (tarikh, date) if line is not None]
-    label_x1 = max(right_edges)
+    left_edges = [_bounds(line["box"])[0] for line in (tarikh, date) if line is not None]
+    label_x0 = min(left_edges)
 
     safety_pad = typical_height * settings.date_field_vertical_safety_pad_ratio
     bottom_extra_pad = typical_height * settings.date_field_bottom_extra_pad_ratio
     crop_y0 = top_y - safety_pad
     crop_y1 = bottom_y + safety_pad + bottom_extra_pad
-    crop_x0 = label_x1
-    crop_x1 = crop_x0 + typical_height * settings.date_field_width_typical_heights
+    crop_x0 = label_x0 - typical_height * 0.5
+    crop_x1 = width * settings.date_field_right_edge_fraction
 
     max_width = width * settings.date_field_max_width_fraction
     max_height = height * settings.date_field_max_height_fraction
@@ -261,7 +266,7 @@ def extract(
         _write_csv(output_dir, result)
         return result
 
-    # Sent at its original resolution: upscaling adds blur, not detail.
+    # Cut from the original pixels, then resized once to the upload size.
     crop = foundry_client.fit_for_upload(crop)
     if settings.save_artifacts:
         cv2.imwrite(str(output_dir / "crop.png"), crop)

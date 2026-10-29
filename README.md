@@ -217,7 +217,7 @@ Key ideas worth knowing:
 
 ### Stage 4: Reading the digits (AI Foundry)
 
-The date box is located on the OCR copy, then cut from the native copy at its original resolution (never enlarged), capped at `LLM_IMAGE_MAX_LONG_EDGE`, and sent to AI Foundry, which returns the digits left to right. PaddleOCR is used only to *locate* the date boxes; it runs locally and nothing it reads is sent.
+The date box is located on the OCR copy, then cut from the native copy (labels included, up to the right edge of the cheque), resized once to between `LLM_IMAGE_MIN_LONG_EDGE` and `LLM_IMAGE_MAX_LONG_EDGE` (both 1024), and sent to AI Foundry, which returns the digits left to right. PaddleOCR is used only to *locate* the date boxes; it runs locally and nothing it reads is sent.
 
 ```mermaid
 flowchart TD
@@ -465,6 +465,7 @@ WORKER_COUNT=1
 | `LLM_MAX_ATTEMPTS` | `3` | Attempts for network errors, HTTP 429 and 5xx. Guardrail blocks are never retried. |
 | `LLM_RETRY_BACKOFF_SECONDS` | `2.0` | Wait before retry *n* is *n* times this. |
 | `LLM_IMAGE_MAX_LONG_EDGE` | `1024` | Crops are downscaled to this long edge before sending. |
+| `LLM_IMAGE_MIN_LONG_EDGE` | `1024` | Smaller crops are enlarged once (bicubic, from the original pixels) to this long edge. `0` = never enlarge. |
 
 ### Signature crop
 
@@ -484,8 +485,8 @@ WORKER_COUNT=1
 | `OCR_ZONE_TOP_FRACTION` / `OCR_ZONE_BOTTOM_FRACTION` | `0.00` / `0.45` | Vertical extent of the OCR region. |
 | `DATE_LABEL_LINE_GAP_RATIO` | `0.2` | Gap used when estimating a missing label line. |
 | `DATE_FIELD_VERTICAL_SAFETY_PAD_RATIO` | `0.15` | Padding above and below the label span. |
-| `DATE_FIELD_BOTTOM_EXTRA_PAD_RATIO` | `0.35` | Extra padding below, for descenders and loops. |
-| `DATE_FIELD_WIDTH_TYPICAL_HEIGHTS` | `17.0` | Crop width in multiples of typical line height. |
+| `DATE_FIELD_BOTTOM_EXTRA_PAD_RATIO` | `0.6` | Extra padding below, for descenders and loops. |
+| `DATE_FIELD_RIGHT_EDGE_FRACTION` | `0.99` | The date crop runs from the TARIKH/DATE labels to this fraction of the page width, so all six boxes are kept. |
 | `DATE_FIELD_MAX_WIDTH_FRACTION` / `DATE_FIELD_MAX_HEIGHT_FRACTION` | `0.55` / `0.32` | Hard ceiling on crop size. |
 | `DATE_USE_TEMPLATE_ZONE` | `false` | Debug only: skip OCR and use the fixed template zone. Keep **off** in production. |
 
